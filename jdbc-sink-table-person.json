@@ -1,0 +1,17 @@
+{
+    "name" : "jdbc-sink-table-person",
+    "config" : {
+        "connector.class" : "io.confluent.connect.jdbc.JdbcSinkConnector",
+        "topics": "dbpostgresqlserver1_publicperson",
+        "tasks.max" : "1",
+        "connection.url" : "jdbc:postgresql://db-postgres-sink:5432/debeziumtest?user=codebaseuser&password=12345678",
+        "auto.create" : "true",
+        "insert.mode" : "upsert",
+        "delete.enabled": "true",
+        "pk.fields" : "id",
+        "pk.mode": "record_key",
+        "transforms": "unwrap",
+        "transforms.unwrap.type": "io.debezium.transforms.ExtractNewRecordState",
+        "transforms.unwrap.drop.tombstones": "false"
+    }
+}

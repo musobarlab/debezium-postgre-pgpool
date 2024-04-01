@@ -1,0 +1,158 @@
+version: '3'
+
+services:
+
+  # Debezium Connect 2.4
+  # https://debezium.io/releases/2.4/
+  
+  zookeeper:
+    image: wurstmeister/zookeeper
+    ports:
+      - "2181:2181"
+    networks:
+      - web
+      
+  kafka:
+    image: wurstmeister/kafka
+    ports:
+      - "9092:9092"
+    depends_on:
+      - zookeeper
+    environment:
+      KAFKA_ADVERTISED_HOST_NAME: kafka
+      KAFKA_CREATE_TOPICS: "test:1:1"
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ZOOKEEPER_TIMEOUT_MS: 36000
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - web
+
+  # psql --dbname=debeziumtest --username=codebaseuser --password
+  pg-0:
+    container_name: db-postgres-0
+    build:
+      context: postgre-docker-bitnami-pg-0
+    ports:
+      - 5432
+    # volumes:
+    #   - pg_0_data:/bitnami/postgresql
+    environment:
+      - POSTGRESQL_POSTGRES_PASSWORD=adminpassword
+      - POSTGRESQL_USERNAME=codebaseuser
+      - POSTGRESQL_PASSWORD=12345678
+      - POSTGRESQL_DATABASE=debeziumtest
+      - POSTGRESQL_NUM_SYNCHRONOUS_REPLICAS=1
+      - REPMGR_PRIMARY_HOST=pg-0
+      - REPMGR_PARTNER_NODES=pg-1,pg-0
+      - REPMGR_NODE_NAME=pg-0
+      - REPMGR_NODE_NETWORK_NAME=pg-0
+      - REPMGR_USERNAME=repmgr
+      - REPMGR_PASSWORD=repmgrpassword
+    networks:
+      - web
+  pg-1:
+    container_name: db-postgres-1
+    build:
+      context: postgre-docker-bitnami-pg-1
+    ports:
+      - 5432
+    # volumes:
+    #   - pg_1_data:/bitnami/postgresql
+    environment:
+      - POSTGRESQL_POSTGRES_PASSWORD=adminpassword
+      - POSTGRESQL_USERNAME=codebaseuser
+      - POSTGRESQL_PASSWORD=12345678
+      - POSTGRESQL_DATABASE=debeziumtest
+      - POSTGRESQL_NUM_SYNCHRONOUS_REPLICAS=1
+      - REPMGR_PRIMARY_HOST=pg-0
+      - REPMGR_PARTNER_NODES=pg-0,pg-1
+      - REPMGR_NODE_NAME=pg-1
+      - REPMGR_NODE_NETWORK_NAME=pg-1
+      - REPMGR_USERNAME=repmgr
+      - REPMGR_PASSWORD=repmgrpassword
+    networks:
+      - web
+  pgpool:
+    container_name: db-postgres
+    build:
+      context: pgpool-docker-bitnami
+    ports:
+      - 5432:5432
+    environment:
+      - PGPOOL_BACKEND_NODES=0:pg-0:5432,1:pg-1:5432
+      - PGPOOL_SR_CHECK_USER=repmgr
+      - PGPOOL_SR_CHECK_PASSWORD=repmgrpassword
+      - PGPOOL_ENABLE_LDAP=no
+      - PGPOOL_POSTGRES_USERNAME=postgres
+      - PGPOOL_POSTGRES_PASSWORD=adminpassword
+      - PGPOOL_ADMIN_USERNAME=admin
+      - PGPOOL_ADMIN_PASSWORD=adminpassword
+      - PGPOOL_ENABLE_LOAD_BALANCING=yes
+      - PGPOOL_POSTGRES_CUSTOM_USERS=codebaseuser
+      - PGPOOL_POSTGRES_CUSTOM_PASSWORDS=12345678
+    healthcheck:
+      test: ["CMD", "/opt/bitnami/scripts/pgpool/healthcheck.sh"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - web
+    depends_on:
+      - pg-0
+      - pg-1
+      
+  db-postgres-sink:
+    container_name: db-postgres-sink
+    working_dir: /usr/app
+    image: 'postgres:11.18-alpine'
+    environment:
+      POSTGRES_USER: codebaseuser
+      POSTGRES_PASSWORD: 12345678
+      POSTGRES_DB : debeziumtest
+      PG_VERSION: '11.18-alpine'
+    ports:
+        - "5433:5432"
+    networks:
+      - web
+
+  # https://hub.docker.com/r/debezium/connect
+  connect:
+    image: debezium/connect-jdbc:${DEBEZIUM_VERSION}
+    build:
+      context: debezium-jdbc
+      args:
+        DEBEZIUM_VERSION: ${DEBEZIUM_VERSION}
+    container_name: connect
+    ports:
+      - 8083:8083
+    networks:
+      - web
+    depends_on:
+      - kafka
+      - pgpool
+      - db-postgres-sink
+    environment:
+      - BOOTSTRAP_SERVERS=kafka:9092
+      - GROUP_ID=1
+      - CONFIG_STORAGE_TOPIC=my_connect_configs
+      - OFFSET_STORAGE_TOPIC=my_connect_offsets
+      - STATUS_STORAGE_TOPIC=my_source_connect_statuses
+      - ENABLE_DEBEZIUM_KC_REST_EXTENSION=true
+      - CONNECT_REST_EXTENSION_CLASSES=io.debezium.kcrestextension.DebeziumConnectRestExtension
+      - ENABLE_DEBEZIUM_SCRIPTING=true
+  
+  debezium-ui:
+    container_name: debezium-ui
+    image: quay.io/debezium/debezium-ui:${DEBEZIUM_VERSION}
+    ports:
+      - "8080:8080"
+    environment:
+      - KAFKA_CONNECT_URIS=http://connect:8083
+    depends_on:
+      - connect
+    networks:
+      - web
+networks:
+  web:
+    driver: bridge
