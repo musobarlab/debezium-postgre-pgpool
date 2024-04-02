@@ -1,0 +1,1 @@
+connect             | 2024-04-02 06:17:24,248 WARN   Postgres|dbpostgresqlserver1|streaming  Cannot seek to the last known offset '0/6000AD0' on replication slot 'myproduct_dbz_slot_order'. Error from server: 'ERROR: cannot advance replication slot to 0/6000AD0, minimum is 0/6000D50'   [io.debezium.connector.postgresql.connection.PostgresReplicationConnection]
