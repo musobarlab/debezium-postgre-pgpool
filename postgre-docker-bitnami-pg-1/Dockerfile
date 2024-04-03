@@ -1,4 +1,4 @@
-FROM docker.io/bitnami/postgresql-repmgr:12
+FROM docker.io/bitnami/postgresql-repmgr:15
 
 COPY postgresql.conf /tmp/postgresql.conf.1.sample
 COPY pg_hba.conf /tmp/pg_hba.1.conf.sample
